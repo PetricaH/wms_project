@@ -108,7 +108,7 @@ export const useAuthStore = defineStore('auth', {
       this.loading = true
       
       try {
-        const response = await axios.post('/api/auth/login', credentials)
+        const response = await axios.post('/login', credentials)
         
         // Set user, tenant and token from response
         this.setUser(response.data.user)

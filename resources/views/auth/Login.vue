@@ -111,7 +111,7 @@
   <script>
   import { ref, reactive } from 'vue'
   import { useRouter } from 'vue-router'
-  import { useAuthStore } from '@/stores/auth' // We'll create this store next
+  import { useAuthStore } from '@/stores/auth'
   
   export default {
     name: 'LoginView',
