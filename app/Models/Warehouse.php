@@ -30,7 +30,7 @@ class Warehouse extends Model
 
     // get all bin locations for the warehouse through zones
     public function binLocations() {
-        return $this->hasManyThrough(binLocations::class, Zone::class);
+        return $this->hasManyThrough(BinLocation::class, Zone::class);
     }
 
     // get all inventory in this warehouse through bin locations

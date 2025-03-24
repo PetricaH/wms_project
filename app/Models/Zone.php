@@ -32,7 +32,7 @@ class Zone extends Model
 
     // get the bin locations for the zone
     public function binLocations(): HasMany {
-        return $this->hasMany(BinLocations::class);
+        return $this->hasMany(BinLocation::class);
     }
 
     // get all the inventory in this zone through bin locations

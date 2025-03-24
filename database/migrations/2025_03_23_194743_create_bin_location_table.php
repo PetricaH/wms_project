@@ -11,17 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('bin_location', function (Blueprint $table) {
+        Schema::create('bin_locations', function (Blueprint $table) {
             $table->id();
             $table->foreignId('zone_id')->constrained()->cascadeOnDelete();
             $table->string('name', 100);
             $table->string('code', 20);
-            $table->json('position')->nullable()->comment('Position in the warehouse (aisle, bay, level');
+            $table->json('position')->nullable()->comment('Position in the warehouse (aisle, bay, level)');
             $table->decimal('capacity', 10, 3)->nullable()->comment('Capacity in cubic units');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
-
-            // create a unique constraint on zone_id and code
+            
+            // Create a unique constraint on zone_id and code
             $table->unique(['zone_id', 'code']);
         });
     }
@@ -31,6 +31,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('bin_location');
+        Schema::dropIfExists('bin_locations');
     }
 };
