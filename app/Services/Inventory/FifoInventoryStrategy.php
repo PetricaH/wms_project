@@ -255,6 +255,186 @@ class FifoInventoryStrategy extends BaseInventoryStrategy {
             // calculate difference
             $difference = $newQuantity - $inventory->quantity;
             $movementType = $difference >= 0 ? InventoryMovement 
+
+            // create movement record
+            $movement = $this->createMovement([
+                'product_id' => $product->id,
+                'from_location_id' => $difference < 0 ? $location->id : null,
+                'to_location_id' => $difference >= 0 ? $location->id : null,
+                'quantity' => abs($difference),
+                'unit_of_measure' => $inventory->unit_of_measure,
+                'lot_number' => $inventory->batch_number,
+                'movement_type' => $movementType,
+                'reason' => $reason ?? 'Inventory adjustment.',
+            ]);
+
+            // update inventory quantity
+            $this->updateInventoryQuantity($inventory, $newQuantity, 'set');
+
+            // create transaction record
+            $transaction = $this->createTransaction($movement, [
+                'transaction_type' => InventoryTransaction::TYPE_ADJUST,
+                'product_id' => $product->id,
+                'location_id' => $location->id,
+                'quantity' => $newQuantity,
+                'unit_cost' => $attributes['unit_cost'] ?? $product->cost,
+                'total_cost' => ($attributes['unit_cost'] ?? $product->cost) * $newQuantity,
+                'lot_number' => $inventory->lot_number,
+                'batch_number' => $inventory->batch_number,
+            ]);
+
+            return [
+                'movement' => $movement,
+                'inventory' => $inventory,
+                'transaction' => $transaction,
+                'difference' => $difference,
+            ];
+        });
+    }
+
+    // reserve inventory
+    public function reserve(
+        Product $product,
+        BinLocation $location,
+        float $quantity,
+        array $attributes = [],
+        ?string $referenceType = null,
+        ?int $referenceId = null
+    ): array {
+        return $this->executeTransaction(function () use ($product, $location, $quantity, $attributes, $referenceType, $referenceId) {
+            // get inventory items ordered by received date
+            $inventoryItems = Inventory::where('product_id', $product->id)
+                ->where('location_id', $location->id)
+                ->where('available_quantity', '>', 0)
+                ->where(isset($attributes['lot_number']), function ($query) use ($attributes) {
+                    return $query->where('lot_number', $attributes['lot_number']);
+                })
+                ->when(isset($attributes['batch_number']), function ($query) use ($attributes) {
+                    return $query->where('batch_number', $attributes['batch_number']);
+                })
+                ->orderBy('received_date')
+                ->orderBy('id')
+                ->get();
+
+            // check if we have enough inventory
+            $totalAvailable = $inventoryItems->sums('available_quantity');
+            if ($totalAvailable < $quantity) {
+                throw new Exception("Insufficient available inventory for reservation");
+            }
+
+            // create movement record
+            $movement = $this->createMovement([
+                'reference_type' => $referenceType,
+                'reference_id' => $referenceId,
+                'product_id' => $product->id,
+                'from_location_id' => $location->id,
+                'to_location_id' => $location->id,
+                'quantity' => $quantity,
+                'unit_of_measure' => $attributes['unit_of_measure'] ?? 'EA',
+                'movement_type' => 'reserve', // not a standard movement type
+                'reason' => $attributes['reason'] ?? 'Inventory reservation',
+            ]);
+
+            // track fifo layers
+            $fifoLayers = [];
+            $remainingQuantity = $quantity;
+            $transactions = [];
+
+            // reserve from each inventory item until the required quantity is met
+            foreach ($inventoryItems as $item) {
+                $reserveQuantity = min($remainingQuantity, $item->available_quantity);
+
+                // update inventory reserved quantity
+                $this->updateInventoryQuantity($item, $reserveQuantity, 'reserve');
+
+                // create transaction
+                $transaction = $this->createTransaction($movement, [
+                    'transaction_type' => InventoryTransaction::TYPE_RESERVE,
+                    'product_id' => $product->id,
+                    'location_id' => $location->id,
+                    'quantity' => $reserveQuantity,
+                    'lot_number' => $item->lot_number, 
+                    'batch_number' => $item->batch_number,
+                ]);
+
+                $transactions[] = $transaction;
+                
+                // record FIFO layer
+                $fifoLayers[] = [
+                    'inventory_id' => $item->id,
+                    'lot_number' => $item->lot_number,
+                    'batch_number' => $item->batch_number,
+                    'quantity' => $reserveQuantity,
+                    'received_quantity' => $item->received_date ? $time->received_date->format('Y-m-d') : null,
+                ];
+
+                $remainingQuantity -= $reserveQuantity;
+
+                // stop if we've reserved enough
+                if ($remainingQuantity <= 0) {
+                    break;
+                }
+            }
+            
+            // update the movement with FIFO layers
+            $movement->fifo_layers = $fifoLayers;
+            $movement->save();
+            
+            return [
+                'movement' => $movement,
+                'transactions' => $transactions,
+                'fifo_layers' => $fifoLayers,
+            ];
+        });
+    }
+
+    // unreserve inventory
+    public function ureserve(
+        Product $product,
+        BinLocation $location,
+        float $quantity,
+        array $attributes = [],
+        ?string $referenceType = null,
+        ?int $referenceId = null
+    ): array {
+        return $this->executeTransaction(function () use ($product, $location, $quantity, $attributes, $referenceType, $referenceId) {
+            // get inventory items with reservations, ordered by received date FIFO
+            $inventoryItems = Inventory::where('product_id', $product->id)
+                ->where('location_id', $location->id)
+                ->where('reserved_quantity', '>', 0)
+                -when(isset($attributes['lot_number']), function ($query) use ($attributes) {
+                    return $query->where('lot_number', $attributes['lot_number']);
+                })
+                -when(isset($attributes['batch_number']), function ($query) use ($attributes) {
+                    return $query->where('batch_number', $attributes['batch_number']);
+                })
+                ->orderBy('received_date')
+                ->orderBy('id')
+                ->get();
+
+            // check if we have enough reserved inventory
+            $totalReserved = $inventoryItems->sum('reserved_quantity');
+            if ($totalReserved < $quantity) {
+                throw new Exception("Insufficient reserved inventory for unreservation");
+            }
+
+            // creat movement record
+            $movement = $this->createMovement([
+                'reference_type' => $referenceType,
+                'reference_id' => $referenceId,
+                'product_id' => $product->id,
+                'from_location_id' => $location->id,
+                'to_location_id' => $location->id,
+                'quantity' => $quantity,
+                'unit_of_measure' => $attributes['unit_of_measure'] ?? 'EA',
+                'movement_type' => 'unreserve',
+                'reason' => $attributes['reason'] ?? 'Inventory unreservarion',
+            ]);
+
+            // track FIFO layers
+            $fifoLayers = [];
+            $remainingQuantity = $quantity;
+            $transactions = [];
         })
     }
 }
