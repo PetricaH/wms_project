@@ -1,12 +1,23 @@
 <?php
 
-namespace App\Service\Inventory;
+namespace App\Services\Inventory;
 
 use App\Models\BinLocation;
 use App\Models\Product;
 
-interface InventoryStrategyInterface {
-    // receive inventory
+interface InventoryStrategyInterface
+{
+    /**
+     * Receive inventory.
+     * 
+     * @param Product $product
+     * @param BinLocation $location
+     * @param float $quantity
+     * @param array $attributes
+     * @param string|null $referenceType
+     * @param int|null $referenceId
+     * @return array
+     */
     public function receive(
         Product $product,
         BinLocation $location,
@@ -16,7 +27,18 @@ interface InventoryStrategyInterface {
         ?int $referenceId = null
     ): array;
 
-    // transfer inventory from one location to another
+    /**
+     * Transfer inventory from one location to another.
+     * 
+     * @param Product $product
+     * @param BinLocation $fromLocation
+     * @param BinLocation $toLocation
+     * @param float $quantity
+     * @param array $attributes
+     * @param string|null $referenceType
+     * @param int|null $referenceId
+     * @return array
+     */
     public function transfer(
         Product $product,
         BinLocation $fromLocation,
@@ -27,6 +49,17 @@ interface InventoryStrategyInterface {
         ?int $referenceId = null
     ): array;
 
+    /**
+     * Pick inventory from a location.
+     * 
+     * @param Product $product
+     * @param BinLocation $location
+     * @param float $quantity
+     * @param array $attributes
+     * @param string|null $referenceType
+     * @param int|null $referenceId
+     * @return array
+     */
     public function pick(
         Product $product,
         BinLocation $location,
@@ -36,7 +69,16 @@ interface InventoryStrategyInterface {
         ?int $referenceId = null
     ): array;
 
-    // adjust inventory quantity
+    /**
+     * Adjust inventory quantity.
+     * 
+     * @param Product $product
+     * @param BinLocation $location
+     * @param float $newQuantity
+     * @param array $attributes
+     * @param string|null $reason
+     * @return array
+     */
     public function adjust(
         Product $product,
         BinLocation $location,
@@ -45,7 +87,17 @@ interface InventoryStrategyInterface {
         ?string $reason = null
     ): array;
 
-    // reserve inventory
+    /**
+     * Reserve inventory.
+     * 
+     * @param Product $product
+     * @param BinLocation $location
+     * @param float $quantity
+     * @param array $attributes
+     * @param string|null $referenceType
+     * @param int|null $referenceId
+     * @return array
+     */
     public function reserve(
         Product $product,
         BinLocation $location,
@@ -55,7 +107,17 @@ interface InventoryStrategyInterface {
         ?int $referenceId = null
     ): array;
 
-    // unreserve inventory
+    /**
+     * Unreserve inventory.
+     * 
+     * @param Product $product
+     * @param BinLocation $location
+     * @param float $quantity
+     * @param array $attributes
+     * @param string|null $referenceType
+     * @param int|null $referenceId
+     * @return array
+     */
     public function unreserve(
         Product $product,
         BinLocation $location,

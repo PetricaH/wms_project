@@ -1,4 +1,4 @@
-<?php 
+<?php
 
 namespace App\Services\Inventory;
 
@@ -11,49 +11,71 @@ use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 
-abstract class BaseInventoryStrategy implements InventoryStrategyInterface {
-    // create a new inventory movement record
-    protected function createMovement(array $data): InventoryMovement {
+abstract class BaseInventoryStrategy implements InventoryStrategyInterface
+{
+    /**
+     * Create a new inventory movement record.
+     * 
+     * @param array $data
+     * @return InventoryMovement
+     */
+    protected function createMovement(array $data): InventoryMovement
+    {
         return InventoryMovement::create(array_merge($data, [
-            'performed_by' => Auth::id();
+            'performed_by' => Auth::id(),
         ]));
     }
 
-    // create a new inventory transaction record
-    protected function createTransaction(InventoryMovement $movement, array $data): InventoryTransaction {
-        // get current running balance
-        $currentBalance = InventoryTransaction::where('product_id', $data['product_id']
-        ->where('location_id', $data['location_id'])
-        ->latest('id')
-        ->value('running_balance') ?? 0;
+    /**
+     * Create a new inventory transaction record.
+     * 
+     * @param InventoryMovement $movement
+     * @param array $data
+     * @return InventoryTransaction
+     */
+    protected function createTransaction(InventoryMovement $movement, array $data): InventoryTransaction
+    {
+        // Get current running balance
+        $currentBalance = InventoryTransaction::where('product_id', $data['product_id'])
+            ->where('location_id', $data['location_id'])
+            ->latest('id')
+            ->value('running_balance') ?? 0;
 
-    // calculate new running balance on transaction type 
-    $newBalance = $currentBalance;
-    switch ($data['transaction_type']) {
-        case InventoryTransaction::TYPE_INCREMENT:
-            $newBalance += $data['quantity'];
-            break;
-        case InventoryTransaction::TYPE_DECREMENT:
-            $newBalance -= $data['quantity'];
-            break;
-        case InventoryTransaction::TYPE_ADJUST:
-            $newBalance = $data['quantity'];
-            break;
-        // reserve and unreserve dont affect the running balance
+        // Calculate new running balance based on transaction type
+        $newBalance = $currentBalance;
+        switch ($data['transaction_type']) {
+            case InventoryTransaction::TYPE_INCREMENT:
+                $newBalance += $data['quantity'];
+                break;
+            case InventoryTransaction::TYPE_DECREMENT:
+                $newBalance -= $data['quantity'];
+                break;
+            case InventoryTransaction::TYPE_ADJUST:
+                $newBalance = $data['quantity']; // Set to the new quantity directly
+                break;
+            // Reserve and unreserve don't affect the running balance
+        }
+
+        return $movement->transactions()->create(array_merge($data, [
+            'running_balance' => $newBalance,
+            'performed_by' => Auth::id(),
+        ]));
     }
 
-    return $movement->transactions()->create(array_merge($data, [
-        'running_balance' => $newBalance,
-        'performed_by' => Auth::id(),
-    ]));
-    }
-
-    // find or create an inventory record for the given product and location
-    protected function findOrCreateInventory(Product $product, BinLocation $location, array $attributes = []): Inventory {
+    /**
+     * Find or create an inventory record for the given product and location.
+     * 
+     * @param Product $product
+     * @param BinLocation $location
+     * @param array $attributes
+     * @return Inventory
+     */
+    protected function findOrCreateInventory(Product $product, BinLocation $location, array $attributes = []): Inventory
+    {
         $lotNumber = $attributes['lot_number'] ?? null;
         $batchNumber = $attributes['batch_number'] ?? null;
         $unitOfMeasure = $attributes['unit_of_measure'] ?? 'EA';
-
+        
         return Inventory::firstOrCreate(
             [
                 'product_id' => $product->id,
@@ -72,8 +94,16 @@ abstract class BaseInventoryStrategy implements InventoryStrategyInterface {
         );
     }
 
-    // update inventory quantity
-    protected function updateInventoryQuantity(Inventory $inventory, float $quantity, string $operation): Inventory {
+    /**
+     * Update inventory quantity.
+     * 
+     * @param Inventory $inventory
+     * @param float $quantity
+     * @param string $operation
+     * @return Inventory
+     */
+    protected function updateInventoryQuantity(Inventory $inventory, float $quantity, string $operation): Inventory
+    {
         switch ($operation) {
             case 'increment':
                 $inventory->quantity += $quantity;
@@ -83,30 +113,43 @@ abstract class BaseInventoryStrategy implements InventoryStrategyInterface {
                 break;
             case 'set':
                 $inventory->quantity = $quantity;
-                break; 
+                break;
             case 'reserve':
-                $inventory->reserved_quanity += $quantity;
+                $inventory->reserved_quantity += $quantity;
                 break;
             case 'unreserve':
-                $inventory->unreserved_quantity -= $quantity;
+                $inventory->reserved_quantity -= $quantity;
                 break;
         }
 
-        // auto-calculate available quanity
+        // Auto-calculate available quantity
         $inventory->available_quantity = $inventory->quantity - $inventory->reserved_quantity;
-
+        
         $inventory->save();
-
+        
         return $inventory;
     }
 
-    // get entity ID safely, even in entity is null
-    protected function getEntityId($entity): ?int {
+    /**
+     * Get entity ID safely, even if entity is null.
+     * 
+     * @param mixed $entity
+     * @return int|null
+     */
+    protected function getEntityId($entity): ?int
+    {
         return $entity ? $entity->id : null;
     }
 
-    // execute a database transaction
-    protected function executeTransaction(callable $callback) {
+    /**
+     * Execute a database transaction.
+     * 
+     * @param callable $callback
+     * @return mixed
+     * @throws Exception
+     */
+    protected function executeTransaction(callable $callback)
+    {
         return DB::transaction($callback);
     }
 }
