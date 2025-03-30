@@ -17,7 +17,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             BusinessSeeder::class,    // First create the businesses
             RoleSeeder::class,        // Then create roles for those businesses
-            PermissionSeeder::class,  // Create permissions and assign to roles
+            PermissionsSeeder::class,  // Create permissions and assign to roles
             UserSeeder::class,        // Finally create users and assign to roles
         ]);
     }
