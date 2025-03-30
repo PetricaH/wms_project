@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class InventoryMoveRequestValidation extends FormRequest {
+class InventoryMoveRequest extends FormRequest {
     // determine if the user is authorized to make this request
     public function authorize(): bool
     {
