@@ -265,5 +265,5 @@ export const useAuthStore = defineStore('auth', {
 
 // Initialize axios auth header when the module is imported
 // This ensures the auth header is set after page refresh
-const authStore = useAuthStore();
-authStore.setAxiosAuthHeader();
+// const authStore = useAuthStore();
+// authStore.setAxiosAuthHeader();
