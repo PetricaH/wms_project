@@ -18,9 +18,13 @@ class User extends Authenticatable
      * @var array<int, string>
      */
     protected $fillable = [
+        'tenant_id', // <-- ADD THIS LINE
         'name',
         'email',
         'password',
+        'job_title', // Add other fields you want to be fillable
+        'phone',
+        'is_active',
     ];
 
     /**
@@ -40,8 +44,19 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password' => 'hashed',
+        'password' => 'hashed', // Use 'hashed' for Laravel 10+
+        'is_active' => 'boolean',
     ];
+
+
+    /**
+     * Get the tenant that the user belongs to.
+     */
+    public function tenant()
+    {
+        // Ensure this relationship is correctly defined
+        return $this->belongsTo(Tenant::class);
+    }
 
     /**
      * Get the roles assigned to this user

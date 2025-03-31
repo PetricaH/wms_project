@@ -1,26 +1,31 @@
-// src/main.js
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import App from './App.vue'
-import router from './router'
-import { setupAxios, setupApiInterceptors } from './services/axios'
+// resources/js/main.js
 
-// Import CSS
-import './assets/css/main.css'
+import { createApp } from 'vue';
+import { createPinia } from 'pinia';
+import App from './App.vue';
+import router from './router';
+import axios from 'axios';
+import apiClient from './utils/axios';
 
-// Create the Vue application instance
-const app = createApp(App)
+// Import styles
+import '../css/app.css';
 
-// Setup Pinia for state management
-const pinia = createPinia()
-app.use(pinia)
+// Configure default axios base URL
+// This ensures all axios calls will have the proper base URL
+axios.defaults.baseURL = '/api';
+// Replace the global axios with our configured instance 
+// for components that import axios directly
+window.axios = apiClient;
 
-// Setup Axios with interceptors
-setupAxios()
-setupApiInterceptors()
+// Create Pinia instance (state management)
+const pinia = createPinia();
 
-// Add router
-app.use(router)
+// Create and mount Vue application
+const app = createApp(App);
 
-// Mount the app
-app.mount('#app')
+// Register plugins
+app.use(pinia);
+app.use(router);
+
+// Mount app
+app.mount('#app');

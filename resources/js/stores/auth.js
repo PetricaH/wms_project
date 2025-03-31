@@ -1,79 +1,46 @@
 // resources/js/stores/auth.js
 
 import { defineStore } from 'pinia';
-import axios from 'axios';
+import axios from 'axios'; // Or your configured apiClient instance
 
 /**
  * Auth Store - Manages authentication state throughout the application
- * 
- * This store handles:
- * - User login/logout
- * - User registration
- * - Token management
- * - Permission checking
- * - User profile data
  */
 export const useAuthStore = defineStore('auth', {
   // State: reactive properties for authentication
   state: () => ({
-    // User token for API authentication
     token: localStorage.getItem('token') || null,
-    
-    // User profile information
     user: JSON.parse(localStorage.getItem('user')) || null,
-    
-    // User roles and permissions
-    roles: JSON.parse(localStorage.getItem('roles')) || [],
-    permissions: JSON.parse(localStorage.getItem('permissions')) || [],
-    
-    // Loading and error states
+    // --- ADD TENANT STATE ---
+    tenant: JSON.parse(localStorage.getItem('tenant')) || null, // Load tenant from storage
+    // --- END ADD ---
+    roles: JSON.parse(localStorage.getItem('roles')) || [], // Consider deriving from user object
+    permissions: JSON.parse(localStorage.getItem('permissions')) || [], // Consider deriving from user object
     loading: false,
     error: null
   }),
-  
+
   // Getters: computed properties for the store
   getters: {
-    /**
-     * Check if the user is authenticated
-     * @returns {boolean} True if user has a valid token
-     */
     isAuthenticated: (state) => !!state.token && !!state.user,
-    
-    /**
-     * Get the current user's name or email
-     * @returns {string} User's display name
-     */
     userName: (state) => state.user ? (state.user.name || state.user.email) : 'Guest',
-    
-    /**
-     * Get the current user's roles as a list of strings
-     * @returns {Array<string>} List of role names
-     */
-    userRoles: (state) => state.roles.map(role => role.name),
-    
-    /**
-     * Get the current user's permissions as a list of strings
-     * @returns {Array<string>} List of permission slugs
-     */
-    userPermissions: (state) => state.permissions.map(permission => permission.slug),
-    
-    /**
-     * Get the authentication header for API requests
-     * @returns {Object} Headers object with Authorization token
-     */
+    // Getter for tenant name (matching Dashboard expectation)
+    tenantName: (state) => state.tenant?.data?.name || 'Unknown Tenant', // Adjust if structure differs
+    userRoles: (state) => state.user?.roles?.map(role => role.name) || state.roles.map(role => role.name) || [],
+    userPermissions: (state) => {
+        const permissionsFromRoles = state.user?.roles?.flatMap(role => role.permissions?.map(p => p.slug) || []) || [];
+        const directPermissions = state.permissions.map(permission => permission.slug) || [];
+        return [...new Set([...permissionsFromRoles, ...directPermissions])];
+    },
     authHeader: (state) => ({
       headers: {
         Authorization: `Bearer ${state.token}`
       }
     })
   },
-  
+
   // Actions: methods that change state or have side effects
   actions: {
-    /**
-     * Set axios default authorization header with the current token
-     * Called after successful login or on application initialization
-     */
     setAxiosAuthHeader() {
       if (this.token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
@@ -81,189 +48,171 @@ export const useAuthStore = defineStore('auth', {
         delete axios.defaults.headers.common['Authorization'];
       }
     },
-    
-    /**
-     * Persist authentication data to localStorage
-     * Called after state changes to keep data across page refreshes
-     */
+
     persistAuthData() {
       if (this.token) {
         localStorage.setItem('token', this.token);
       } else {
         localStorage.removeItem('token');
       }
-      
       if (this.user) {
         localStorage.setItem('user', JSON.stringify(this.user));
       } else {
         localStorage.removeItem('user');
       }
-      
-      localStorage.setItem('roles', JSON.stringify(this.roles));
-      localStorage.setItem('permissions', JSON.stringify(this.permissions));
+      // --- PERSIST TENANT ---
+      if (this.tenant) {
+        localStorage.setItem('tenant', JSON.stringify(this.tenant)); // Save tenant
+      } else {
+        localStorage.removeItem('tenant'); // Clear tenant
+      }
+      // --- END PERSIST ---
+
+      // Persisting roles/permissions separately might be redundant if included in user object
+      // localStorage.setItem('roles', JSON.stringify(this.roles));
+      // localStorage.setItem('permissions', JSON.stringify(this.permissions));
     },
-    
-    /**
-     * Authenticate user with email and password
-     * @param {Object} credentials - User login credentials
-     * @param {string} credentials.email - User email
-     * @param {string} credentials.password - User password
-     * @returns {Promise<Object>} User data on success
-     */
+
     async login(credentials) {
       this.loading = true;
       this.error = null;
-      
       try {
-        // Make API request to login endpoint
-        const response = await axios.post('/api/auth/login', credentials);
-        
-        // Store authentication data
+        const response = await axios.post('/login', credentials);
+
+        // --- STORE USER AND TENANT ---
         this.token = response.data.token;
         this.user = response.data.user;
-        this.roles = response.data.roles || [];
-        this.permissions = response.data.permissions || [];
-        
-        // Setup axios and persist data
+        this.tenant = response.data.tenant; // <-- STORE THE TENANT OBJECT
+        // --- END STORE ---
+
+        // Reset roles/permissions if they are derived from user/tenant now
+        // this.roles = [];
+        // this.permissions = [];
+
         this.setAxiosAuthHeader();
         this.persistAuthData();
-        
         this.loading = false;
         return response.data;
       } catch (error) {
         this.loading = false;
-        this.error = error.response?.data?.message || 'Authentication failed';
-        throw error;
+        this.error = error.response?.data?.message || error.response?.data?.error || 'Authentication failed';
+        console.error("Login Error:", error.response || error);
+        throw error; // Re-throw error so component can catch it
       }
     },
-    
-    /**
-     * Register a new user
-     * @param {Object} userData - User registration data
-     * @returns {Promise<Object>} User data on success
-     */
+
     async register(userData) {
-      this.loading = true;
-      this.error = null;
-      
-      try {
-        const response = await axios.post('/api/auth/register', userData);
-        
-        // Store authentication data if auto-login is enabled
-        if (response.data.token) {
-          this.token = response.data.token;
-          this.user = response.data.user;
-          this.roles = response.data.roles || [];
-          this.permissions = response.data.permissions || [];
-          
-          this.setAxiosAuthHeader();
-          this.persistAuthData();
+        this.loading = true;
+        this.error = null;
+        try {
+            const response = await axios.post('/register', userData);
+
+            // Store auth data if registration includes auto-login
+            if (response.data.token && response.data.user) {
+                this.token = response.data.token;
+                this.user = response.data.user;
+                this.tenant = response.data.tenant; // <-- STORE TENANT ON REGISTER TOO
+                // this.roles = []; // Reset if derived
+                // this.permissions = []; // Reset if derived
+
+                this.setAxiosAuthHeader();
+                this.persistAuthData();
+            }
+
+            this.loading = false;
+            return response.data;
+        } catch (error) {
+            this.loading = false;
+            this.error = error.response?.data?.message || error.response?.data?.errors || 'Registration failed';
+            console.error("Register Error:", error.response || error);
+            throw error;
         }
-        
-        this.loading = false;
-        return response.data;
-      } catch (error) {
-        this.loading = false;
-        this.error = error.response?.data?.message || 'Registration failed';
-        throw error;
-      }
     },
-    
-    /**
-     * Logout current user
-     * @returns {Promise<void>}
-     */
+
+
     async logout() {
       this.loading = true;
-      
       try {
-        // Only make API request if we have a token
         if (this.token) {
-          await axios.post('/api/auth/logout', {}, this.authHeader);
+          await axios.post('/auth/logout', {}, this.authHeader);
         }
       } catch (error) {
-        console.error('Logout error:', error);
+        console.error('Logout API error:', error.response || error);
       } finally {
-        // Clear authentication data regardless of API success
+        // --- CLEAR ALL AUTH STATE ---
         this.token = null;
         this.user = null;
+        this.tenant = null; // <-- CLEAR TENANT
         this.roles = [];
         this.permissions = [];
-        
-        // Remove auth header and clear persisted data
+        // --- END CLEAR ---
+
         this.setAxiosAuthHeader();
-        this.persistAuthData();
-        
+        this.persistAuthData(); // This will remove items from localStorage
         this.loading = false;
+
+        // Optional: Redirect to login after logout
+        // router.push('/login');
       }
     },
-    
-    /**
-     * Fetch current user profile data
-     * @returns {Promise<Object>} User data on success
-     */
+
     async fetchUserProfile() {
-      if (!this.token) return null;
-      
+      // This action might need adjustment if it should also fetch/update tenant info
+      if (!this.token || this.loading) return null;
+
       this.loading = true;
-      
+      this.error = null;
       try {
-        const response = await axios.get('/api/auth/me', this.authHeader);
-        
-        // Update user data
+        // Assuming /auth/user returns user and potentially updated tenant info
+        const response = await axios.get('/auth/user');
+
         this.user = response.data.user;
-        this.roles = response.data.roles || [];
-        this.permissions = response.data.permissions || [];
-        
+        // --- UPDATE TENANT IF RETURNED ---
+        if (response.data.tenant) {
+             this.tenant = response.data.tenant;
+        }
+        // --- END UPDATE ---
+
+        // Reset roles/permissions if derived
+        // this.roles = [];
+        // this.permissions = [];
+
         this.persistAuthData();
-        
         this.loading = false;
         return response.data;
       } catch (error) {
-        // If unauthorized, clear auth data
+         console.error("Fetch User Profile Error:", error.response || error);
+         this.loading = false; // Ensure loading is false on error
         if (error.response?.status === 401) {
-          this.logout();
+          console.log("fetchUserProfile: Received 401, logging out.");
+          await this.logout(); // Ensure logout clears state
+        } else {
+            this.error = error.response?.data?.message || 'Failed to fetch user data';
+            // Optionally re-throw non-401 errors if needed by caller
+            // throw error;
         }
-        
-        this.loading = false;
-        this.error = error.response?.data?.message || 'Failed to fetch user data';
-        throw error;
+        return null; // Indicate failure
       }
     },
-    
-    /**
-     * Check if user has a specific permission
-     * @param {string} permission - Permission slug to check
-     * @returns {boolean} True if user has the permission
-     */
+
+    // hasPermission and hasRole getters might be sufficient if roles/permissions are nested in user object
+    // If not, ensure they use the separate this.roles/this.permissions state
     hasPermission(permission) {
       if (!this.isAuthenticated) return false;
-      
-      // Check direct permissions
-      if (this.userPermissions.includes(permission)) return true;
-      
-      // Check permission wildcards (e.g., 'products.*' includes 'products.create')
-      const wildcardPermissions = this.userPermissions.filter(p => p.endsWith('.*'));
+      const userPerms = this.userPermissions; // Use the getter
+      if (userPerms.includes(permission)) return true;
+      const wildcardPermissions = userPerms.filter(p => p.endsWith('.*'));
       for (const wildcardPermission of wildcardPermissions) {
-        const prefix = wildcardPermission.slice(0, -2); // Remove '.*'
-        if (permission.startsWith(prefix)) return true;
+        const prefix = wildcardPermission.slice(0, -2);
+        if (permission.startsWith(prefix + '.')) return true;
+        if (permission === prefix) return true;
       }
-      
       return false;
     },
-    
-    /**
-     * Check if user has a specific role
-     * @param {string} role - Role name to check
-     * @returns {boolean} True if user has the role
-     */
+
     hasRole(role) {
-      return this.userRoles.includes(role);
+       if (!this.isAuthenticated) return false;
+      return this.userRoles.includes(role); // Use the getter
     }
   }
 });
-
-// Initialize axios auth header when the module is imported
-// This ensures the auth header is set after page refresh
-// const authStore = useAuthStore();
-// authStore.setAxiosAuthHeader();
