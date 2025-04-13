@@ -60,7 +60,7 @@
 <script setup>
 import { useAuthStore } from '../stores/auth';
 import UserMenu from '../components/navigation/UserMenu.vue';
-
+import SidebarNav from '../components/navigation/SidebarNav.vue';
 // Get the auth store for permission checking
 const authStore = useAuthStore();
 </script>
